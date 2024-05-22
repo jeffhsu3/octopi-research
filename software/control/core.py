@@ -1305,10 +1305,6 @@ class AutofocusWorker(QObject):
             if focus_measure < focus_measure_max*AF.STOP_THRESHOLD:
                 break
 
-        # move to the starting location
-        # self.navigationController.move_z_usteps(-steps_moved*self.deltaZ_usteps) # combine with the back and forth maneuver below
-        # self.wait_till_operation_is_completed()
-
         # maneuver for achiving uniform step size and repeatability when using open-loop control
         if self.navigationController.get_pid_control_flag(2) is False:
             _usteps_to_clear_backlash = max(160,20*self.navigationController.z_microstepping)
@@ -1316,17 +1312,16 @@ class AutofocusWorker(QObject):
             # determine the in-focus position
             idx_in_focus = focus_measure_vs_z.index(max(focus_measure_vs_z))
             self.wait_till_operation_is_completed()
-            self.navigationController.move_z_usteps(_usteps_to_clear_backlash+(idx_in_focus+1)*self.deltaZ_usteps)
+            #self.navigationController.move_z_usteps(_usteps_to_clear_backlash+(idx_in_focus+1)*self.deltaZ_usteps)
+            self.navigationController.move_z_usteps(-steps_moved*self.deltaZ_usteps)
             self.wait_till_operation_is_completed()
         else:
             # determine the in-focus position
             idx_in_focus = focus_measure_vs_z.index(max(focus_measure_vs_z))
-            self.navigationController.move_z_usteps((idx_in_focus+1)*self.deltaZ_usteps-steps_moved*self.deltaZ_usteps)
+            #self.navigationController.move_z_usteps((idx_in_focus+1)*self.deltaZ_usteps-steps_moved*self.deltaZ_usteps)
+            self.navigationController.move_z_usteps(-steps_moved*self.deltaZ_usteps)
             self.wait_till_operation_is_completed()
 
-        # move to the calculated in-focus position
-        # self.navigationController.move_z_usteps(idx_in_focus*self.deltaZ_usteps)
-        # self.wait_till_operation_is_completed() # combine with the movement above
         if idx_in_focus == 0:
             print('moved to the bottom end of the AF range')
         if idx_in_focus == self.N-1:
