@@ -1,5 +1,6 @@
 # set QT_API environment variable
 import os 
+import sys
 os.environ["QT_API"] = "pyqt5"
 import qtpy
 
@@ -34,6 +35,8 @@ class OctopiGUI(QMainWindow):
             self.imageDisplayWindow.show_ROI_selector()
         else:
             self.imageDisplayWindow = core.ImageDisplayWindow(draw_crosshairs=True)
+        if SHOW_TILED_PREVIEW:
+            self.imageDisplayWindow_scan_preview = core.ImageDisplayWindow(draw_crosshairs=True)
         self.imageArrayDisplayWindow = core.ImageArrayDisplayWindow() 
         # self.imageDisplayWindow.show()
         # self.imageArrayDisplayWindow.show()
@@ -42,6 +45,8 @@ class OctopiGUI(QMainWindow):
         self.imageDisplayTabs = QTabWidget()
         self.imageDisplayTabs.addTab(self.imageDisplayWindow.widget, "Live View")
         self.imageDisplayTabs.addTab(self.imageArrayDisplayWindow.widget, "Multichannel Acquisition")
+        if SHOW_TILED_PREVIEW:
+            self.imageDisplayTabs.addTab(self.imageDisplayWindow_scan_preview.widget, "Tiled Preview")
 
         # load objects
         if is_simulation:
@@ -91,19 +96,22 @@ class OctopiGUI(QMainWindow):
             time.sleep(0.005)
             if time.time() - t0 > 10:
                 print('z homing timeout, the program will exit')
-                exit()
+                sys.exit(1)
         print('objective retracted')
 
         # set encoder arguments
         # set axis pid control enable
         # only ENABLE_PID_X and HAS_ENCODER_X are both enable, can be enable to PID
         if HAS_ENCODER_X == True:
+            self.navigationController.set_axis_PID_arguments(0, PID_P_X, PID_I_X, PID_D_X)
             self.navigationController.configure_encoder(0, (SCREW_PITCH_X_MM * 1000) / ENCODER_RESOLUTION_UM_X, ENCODER_FLIP_DIR_X)
             self.navigationController.set_pid_control_enable(0, ENABLE_PID_X)
         if HAS_ENCODER_Y == True:
+            self.navigationController.set_axis_PID_arguments(1, PID_P_Y, PID_I_Y, PID_D_Y)
             self.navigationController.configure_encoder(1, (SCREW_PITCH_Y_MM * 1000) / ENCODER_RESOLUTION_UM_Y, ENCODER_FLIP_DIR_Y)
             self.navigationController.set_pid_control_enable(1, ENABLE_PID_Y)
         if HAS_ENCODER_Z == True:
+            self.navigationController.set_axis_PID_arguments(2, PID_P_Z, PID_I_Z, PID_D_Z)
             self.navigationController.configure_encoder(2, (SCREW_PITCH_Z_MM * 1000) / ENCODER_RESOLUTION_UM_Z, ENCODER_FLIP_DIR_Z)
             self.navigationController.set_pid_control_enable(2, ENABLE_PID_Z)
 
@@ -124,15 +132,12 @@ class OctopiGUI(QMainWindow):
         self.navigationController.set_y_limit_pos_mm(SOFTWARE_POS_LIMIT.Y_POSITIVE)
         self.navigationController.set_y_limit_neg_mm(SOFTWARE_POS_LIMIT.Y_NEGATIVE)
 
-        # raise the objective
-        self.navigationController.move_z(DEFAULT_Z_POS_MM)
-        # wait for the operation to finish
-        t0 = time.time() 
-        while self.microcontroller.is_busy():
-            time.sleep(0.005)
-            if time.time() - t0 > 5:
-                print('z return timeout, the program will exit')
-                exit()
+        # set piezo arguments
+        if ENABLE_OBJECTIVE_PIEZO is True:
+            if PIEZO_CONTROL_VOLTAGE_RANGE == 5:
+                OUTPUT_GAINS.CHANNEL7_GAIN = True
+            else:
+                OUTPUT_GAINS.CHANNEL7_GAIN = False
 
         # set output's gains
         div = 1 if OUTPUT_GAINS.REFDIV is True else 0
@@ -251,6 +256,10 @@ class OctopiGUI(QMainWindow):
         self.multipointController.image_to_display.connect(self.imageDisplayWindow.display_image)
         self.multipointController.signal_current_configuration.connect(self.liveControlWidget.set_microscope_mode)
         self.multipointController.image_to_display_multi.connect(self.imageArrayDisplayWindow.display_image)
+
+        if SHOW_TILED_PREVIEW:
+            self.multipointController.image_to_display_tiled_preview.connect(self.imageDisplayWindow_scan_preview.display_image)
+            self.imageDisplayWindow_scan_preview.image_click_coordinates.connect(self.navigationController.scan_preview_move_from_click)
 
         self.liveControlWidget.signal_newExposureTime.connect(self.cameraSettingWidget.set_exposure_time)
         self.liveControlWidget.signal_newAnalogGain.connect(self.cameraSettingWidget.set_analog_gain)

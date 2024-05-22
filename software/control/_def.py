@@ -1,4 +1,5 @@
 import os
+import sys
 import glob
 import numpy as np
 from pathlib import Path
@@ -131,6 +132,8 @@ class CMD_SET:
     CONFIGURE_STAGE_PID = 25
     ENABLE_STAGE_PID = 26
     DISABLE_STAGE_PID = 27
+    SET_HOME_SAFETY_MERGIN = 28
+    SET_PID_ARGUMENTS = 29
     SEND_HARDWARE_TRIGGER = 30
     SET_STROBE_DELAY = 31
     SET_PIN_LEVEL = 41
@@ -293,6 +296,19 @@ ENABLE_PID_X  = False
 ENABLE_PID_Y  = False
 ENABLE_PID_Z  = False
 
+# PID arguments
+PID_P_X = int(1<<12)
+PID_I_X = int(0)
+PID_D_X = int(0)
+
+PID_P_Y = int(1<<12)
+PID_I_Y = int(0)
+PID_D_Y = int(0)
+
+PID_P_Z = int(1<<12)
+PID_I_Z = int(0)
+PID_D_Z = int(1)
+
 # flip direction True or False
 ENCODER_FLIP_DIR_X = True
 ENCODER_FLIP_DIR_Y = True
@@ -393,6 +409,7 @@ class SOFTWARE_POS_LIMIT:
     Y_POSITIVE = 56
     Y_NEGATIVE = -0.5
     Z_POSITIVE = 6
+    Z_NEGATIVE = 0.05
 
 SHOW_AUTOLEVEL_BTN = False
 AUTOLEVEL_DEFAULT_SETTING = False
@@ -413,7 +430,7 @@ CAMERA_SN = {'ch 1':'SN1','ch 2': 'SN2'} # for multiple cameras, to be overwritt
 
 ENABLE_STROBE_OUTPUT = False
 
-Z_STACKING_CONFIG = 'FROM CENTER' # 'FROM BOTTOM', 'FROM TOP'
+Z_STACKING_CONFIG = 'FROM BOTTOM' # 'FROM BOTTOM', 'FROM TOP'
 
 # plate format
 WELLPLATE_FORMAT = 384
@@ -491,10 +508,65 @@ CAMERA_TYPE="Default"
 
 FOCUS_CAMERA_TYPE="Default"
 
+# Spinning disk confocal integration
+ENABLE_SPINNING_DISK_CONFOCAL = False
+USE_LDI_SERIAL_CONTROL = False
+
+XLIGHT_EMISSION_FILTER_MAPPING = {405:1,470:2,555:3,640:4,730:5}
+XLIGHT_SERIAL_NUMBER = "B00031BE"
+XLIGHT_SLEEP_TIME_FOR_WHEEL = 0.25
+XLIGHT_VALIDATE_WHEEL_POS = False
+
+# Confocal.nl NL5 integration
+ENABLE_NL5 = True
+NL5_USE_AOUT = False
+NL5_USE_DOUT = True
+NL5_TRIGGER_PIN = 2
+NL5_WAVENLENGTH_MAP = {
+    405: 1,
+    470: 2, 488: 2,
+    545: 3, 555: 3, 561: 3,
+    637: 4, 638: 4, 640: 4
+}
+
+# Laser AF characterization mode
+LASER_AF_CHARACTERIZATION_MODE=False
+
+# Napari integration
+USE_NAPARI_FOR_LIVE_VIEW = False
+USE_NAPARI_FOR_MULTIPOINT = False
+
+# Controller SN (needed when using multiple teensy-based connections)
+CONTROLLER_SN = None
+
+# Sci microscopy
+SUPPORT_SCIMICROSCOPY_LED_ARRAY = False
+SCIMICROSCOPY_LED_ARRAY_SN = None
+SCIMICROSCOPY_LED_ARRAY_DISTANCE = 50
+SCIMICROSCOPY_LED_ARRAY_DEFAULT_NA = 0.8
+SCIMICROSCOPY_LED_ARRAY_DEFAULT_COLOR = [1,1,1]
+SCIMICROSCOPY_LED_ARRAY_TURN_ON_DELAY = 0.03 # time to wait before trigger the camera (in seconds)
+
+# Tiled preview
+SHOW_TILED_PREVIEW = True
+PRVIEW_DOWNSAMPLE_FACTOR = 5
+
 ##########################################################
 #### start of loading machine specific configurations ####
 ##########################################################
 CACHED_CONFIG_FILE_PATH = None
+
+# Piezo configuration items
+ENABLE_OBJECTIVE_PIEZO = True
+# the value of OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE is 2.5 or 5
+OBJECTIVE_PIEZO_CONTROL_VOLTAGE_RANGE = 5
+OBJECTIVE_PIEZO_RANGE_UM = 300
+OBJECTIVE_PIEZO_HOME_UM = 100
+
+MULTIPOINT_USE_PIEZO_FOR_ZSTACKS = True
+MULTIPOINT_PIEZO_DELAY_MS = 20
+MULTIPOINT_PIEZO_UPDATE_DISPLAY = True
+
 try:
     with open("cache/config_file_path.txt", 'r') as file:
         for line in file:
@@ -511,7 +583,7 @@ if config_files:
             config_files = [CACHED_CONFIG_FILE_PATH]
         else:
             print('multiple machine configuration files found, the program will exit')
-            exit()
+            sys.exit(1)
     print('load machine-specific configuration')
     #exec(open(config_files[0]).read())
     cfp = ConfigParser()
@@ -547,15 +619,20 @@ else:
     if config_files:
         if len(config_files) > 1:
             print('multiple machine configuration files found, the program will exit')
-            exit()
+            sys.exit(1)
         print('load machine-specific configuration')
         exec(open(config_files[0]).read())
     else:
         print('machine-specific configuration not present, the program will exit')
-        exit()
+        sys.exit(1)
 ##########################################################
 ##### end of loading machine specific configurations #####
 ##########################################################
+
+# objective piezo
+if ENABLE_OBJECTIVE_PIEZO == False:
+    MULTIPOINT_USE_PIEZO_FOR_ZSTACKS = False
+
 # saving path
 if not (DEFAULT_SAVING_PATH.startswith(str(Path.home()))):
     DEFAULT_SAVING_PATH = str(Path.home())+"/"+DEFAULT_SAVING_PATH.strip("/")
@@ -564,6 +641,11 @@ if not (DEFAULT_SAVING_PATH.startswith(str(Path.home()))):
 X_HOME_SWITCH_POLARITY = LIMIT_SWITCH_POLARITY.X_HOME
 Y_HOME_SWITCH_POLARITY = LIMIT_SWITCH_POLARITY.Y_HOME
 Z_HOME_SWITCH_POLARITY = LIMIT_SWITCH_POLARITY.Z_HOME
+
+# home safety margin with (um) unit
+X_HOME_SAFETY_MARGIN_UM = 50
+Y_HOME_SAFETY_MARGIN_UM = 50
+Z_HOME_SAFETY_MARGIN_UM = 600 
 
 if ENABLE_TRACKING:
     DEFAULT_DISPLAY_CROP = Tracking.DEFAULT_DISPLAY_CROP
@@ -598,3 +680,9 @@ elif WELLPLATE_FORMAT == 6:
     WELL_SPACING_MM = 39.2
     A1_X_MM = 24.55
     A1_Y_MM = 23.01
+elif WELLPLATE_FORMAT == 1536:
+    NUMBER_OF_SKIP = 0
+    WELL_SIZE_MM = 1.5
+    WELL_SPACING_MM = 2.25
+    A1_X_MM = 11.0
+    A1_Y_MM = 7.86
